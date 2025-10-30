@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_CONTAINER_REGISTRY: 'acseshop1901752249'   # <--- put your ACR name here
+  AZURE_CONTAINER_REGISTRY: 'acseshop1901752249'
   CONTAINER_NAME: 'productservice'
   RESOURCE_GROUP: 'rg-eshop'
   CLUSTER_NAME: 'aks-eshop'
@@ -22,17 +22,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # Login to Azure (uses your AZURE_CREDENTIALS secret)
       - name: Azure login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Authenticate Docker to your ACR via AAD (no admin user needed)
       - name: ACR login
         run: az acr login -n ${{ env.AZURE_CONTAINER_REGISTRY }}
 
-      # Build and push image on the runner (replaces 'az acr build')
       - name: Build and push image to ACR
         run: |
           TAG=${{ github.sha }}
@@ -41,7 +38,6 @@ jobs:
           docker build -f ${{ env.DOCKER_PATH }} -t "$IMAGE" .
           docker push "$IMAGE"
 
-      # (Optional) List the latest tags to verify push
       - name: Show latest tags
         run: |
           az acr repository show-tags \
@@ -49,30 +45,26 @@ jobs:
             --repository ${{ env.CONTAINER_NAME }} \
             --orderby time_desc -o table
 
-deploy:
+  deploy:
+    needs: buildImage
     permissions:
       actions: read
       contents: read
       id-token: write
     runs-on: ubuntu-latest
-    needs: [buildImage]
     steps:
-      # Checks out the repository this file is in
       - uses: actions/checkout@v3
 
-      # Logs in with your Azure credentials
       - name: Azure login
-        uses: azure/login@v1.4.6
+        uses: azure/login@v2
         with:
-          creds: '${{ secrets.AZURE_CREDENTIALS }}'
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Use kubelogin to configure your kubeconfig for Azure auth
       - name: Set up kubelogin for non-interactive login
         uses: azure/use-kubelogin@v1
         with:
           kubelogin-version: 'v0.0.25'
 
-      # Retrieves your Azure Kubernetes Service cluster's kubeconfig file
       - name: Get K8s context
         uses: azure/aks-set-context@v3
         with:
@@ -81,8 +73,7 @@ deploy:
           admin: 'false'
           use-kubelogin: 'true'
 
-      # Deploys application based on given manifest file
-      - name: Deploys application
+      - name: Deploy application
         uses: Azure/k8s-deploy@v4
         with:
           action: deploy
