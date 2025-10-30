@@ -6,8 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  # Local environment variables used later in the workflow
-  AZURE_CONTAINER_REGISTRY: 'acseshop1901752249'
+  AZURE_CONTAINER_REGISTRY: 'acseshop1901752249'   # <--- put your ACR name here
   CONTAINER_NAME: 'productservice'
   RESOURCE_GROUP: 'rg-eshop'
   CLUSTER_NAME: 'aks-eshop'
@@ -21,16 +20,31 @@ jobs:
       id-token: write
     runs-on: ubuntu-latest
     steps:
-      # Checks out the repository this file is in
       - uses: actions/checkout@v3
 
-      # Logs in with your Azure credentials stored in GitHub secrets
+      # Login to Azure (uses your AZURE_CREDENTIALS secret)
       - name: Azure login
-        uses: azure/login@v1.4.6
+        uses: azure/login@v2
         with:
-          creds: '${{ secrets.AZURE_CREDENTIALS }}'
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Builds and pushes an image up to your Azure Container Registry
+      # Authenticate Docker to your ACR via AAD (no admin user needed)
+      - name: ACR login
+        run: az acr login -n ${{ env.AZURE_CONTAINER_REGISTRY }}
+
+      # Build and push image on the runner (replaces 'az acr build')
       - name: Build and push image to ACR
         run: |
-          az acr build --file ${{ env.DOCKER_PATH }} --image ${{ env.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.CONTAINER_NAME }}:${{ github.sha }} --registry ${{ env.AZURE_CONTAINER_REGISTRY }} -g ${{ env.RESOURCE_GROUP }} .
+          TAG=${{ github.sha }}
+          IMAGE=${{ env.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.CONTAINER_NAME }}:$TAG
+          echo "Building $IMAGE"
+          docker build -f ${{ env.DOCKER_PATH }} -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      # (Optional) List the latest tags to verify push
+      - name: Show latest tags
+        run: |
+          az acr repository show-tags \
+            -n ${{ env.AZURE_CONTAINER_REGISTRY }} \
+            --repository ${{ env.CONTAINER_NAME }} \
+            --orderby time_desc -o table
